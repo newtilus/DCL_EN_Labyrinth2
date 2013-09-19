@@ -64,9 +64,10 @@ void LabyrinthReading::onNewData() {
   Types::Mrrocpp_Proxy::LabyrinthData data;
 
   istringstream iss(stringDataReceived);
-  string tmp;
 
-  data.labyrinth_solved = true;
+
+  iss >> data.labyrinth_solved;
+  iss >> data.calibrate_labyrinth;
   iss >> data.path_size;
   iss >> data.start_point_x;
   iss >> data.start_point_y;

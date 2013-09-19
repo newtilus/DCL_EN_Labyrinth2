@@ -43,6 +43,7 @@ public:
   int end_point_x;
   int end_point_y;
   int path[MAX_PATH_SIZE];
+  bool calibrate_labyrinth;
 
 	virtual void send(boost::shared_ptr<xdr_oarchive<> > & ar){
 		*ar<<*this;
@@ -63,6 +64,7 @@ private:
     ar & end_point_x;
     ar & end_point_y;
     ar & path;
+    ar & calibrate_labyrinth;
 	}
 };
 

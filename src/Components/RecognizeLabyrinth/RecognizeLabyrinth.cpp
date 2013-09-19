@@ -101,10 +101,9 @@ RecognizeLabyrinth::RecognizeLabyrinth(const std::string & name) :
   prop_threshold("threshold", 20),
   prop_segmentation_threshold("segmentation_threshold", 20),
   prop_min_length("min_length", 100),
-  prop_max_gap("max_gap", 5)
+  prop_max_gap("max_gap", 5),
+  prop_calibrate_labyrinth("calibrate_labyrinth", 0)
 {
-  printf("\n\nSiema!\n");
-  LOG(LNOTICE) << "Hello RecognizeLabyrinth\n";
   registerProperty(prop_width);
   registerProperty(prop_height);
   //registerProperty(prop_calibrationResults);
@@ -116,6 +115,7 @@ RecognizeLabyrinth::RecognizeLabyrinth(const std::string & name) :
   registerProperty(prop_segmentation_threshold);
   registerProperty(prop_min_length);
   registerProperty(prop_max_gap);
+  registerProperty(prop_calibrate_labyrinth);
   k = 0;
   showImage = false;
   showProcessed = false;
@@ -125,13 +125,11 @@ RecognizeLabyrinth::RecognizeLabyrinth(const std::string & name) :
 
 RecognizeLabyrinth::~RecognizeLabyrinth()
 {
-  LOG(LNOTICE) << "Good bye RecognizeLabyrinth\n";
+  cout << "Good bye RecognizeLabyrinth\n" << endl;
 }
 
 bool RecognizeLabyrinth::onInit()
 {
-  LOG(LNOTICE) << "RecognizeLabyrinth::onInit\n";
-
   file_found = loadParameters();
   labyrinth_found = false;
   labyrinth_solved = false;
@@ -141,19 +139,21 @@ bool RecognizeLabyrinth::onInit()
   max_y = 0;
   for(int i=0; i<MAX_PATH; ++i) path[i] = 0;
 
+  Mat labyrinth_last(100, 100, 1);
+
   return true;
 }
 
 bool RecognizeLabyrinth::onFinish()
 {
-  LOG(LNOTICE) << "RecognizeLabyrinth::finish\n";
+  cout << "RecognizeLabyrinth::finish\n" << endl;
 
   return true;
 }
 
 bool RecognizeLabyrinth::onStep()
 {
-  LOG(LNOTICE) << "RecognizeLabyrinth::step\n";
+  cout << "RecognizeLabyrinth::step\n" << endl;
   return true;
 }
 
@@ -169,13 +169,11 @@ bool RecognizeLabyrinth::onStart()
 
 void RecognizeLabyrinth::onRpcCall()
 {
-  LOG(LNOTICE) << "void RecognizeLabyrinth::onRpcCall() begin\n";
+  cout << "void RecognizeLabyrinth::onRpcCall() begin" << endl;
 }
 
-void RecognizeLabyrinth::onNewImage()
+void RecognizeLabyrinth::processLabyrinth()
 {
-  //LOG(LNOTICE) << "ImageLabyrinth_Processor::onNewImage\n";
-
   x1 = prop_x1;
   x2 = prop_x2;
   y1 = prop_y1;
@@ -183,55 +181,15 @@ void RecognizeLabyrinth::onNewImage()
   threshold = prop_threshold;
   segmentation_threshold = prop_segmentation_threshold;
   min_length = prop_min_length;
+  calibrate_labyrinth = prop_calibrate_labyrinth;
   max_gap = prop_max_gap;
 
-  // Sometimes data is not available, don't care about it and repeat the loop
-  if(in_img.empty())
-    return;
-
-  Mat image = in_img.read();
-//  boost::this_thread::sleep(boost::posix_time::milliseconds(1000));
-
-
-  // Remember the first picture
-  if(first_image_saved != true)
-  {
-    first_image = image;
-    first_image_saved = true;
-    return;
+  if(labyrinth_first.empty()) {
+      out_done_processing.write(false);
+      return;
   }
 
-  // TODO Comment this to continue with labyrinth solving
-//  out_img.write(image.clone());
-//  return;
-
-  //if(labyrinth_found!=true) { labyrinth_found=true; labyrinth_first = image.clone(); }
-  // Extract the manipulator's arm and other objects from the original picture
-//  Mat difference;
-//  Mat difference_bw;
-//  Mat difference_threshold;
-//  Mat difference_final;
-//  Mat difference_final_inv;
-//  absdiff(first_image, image, difference);
-//  cvtColor(difference, difference_bw, CV_BGR2GRAY);
-//  cv::threshold(difference_bw, difference_threshold, 200, 255, THRESH_TOZERO_INV);
-//  cv::threshold(difference_threshold, difference_final, 50, 255, THRESH_BINARY);
-//  bitwise_not(difference_final, difference_final_inv);
-  // TODO Delete this comment to enable above extraction
-//  if(labyrinth_found)
-//  labyrinth_first.copyTo(image, difference_final);
-
-
-  Mat out_calib;
-  // Calibration based on file, if file doesn't exist, don't calibrate
-//  if (file_found) {
-//    Mat map1, map2;
-//    Size imageSize = image.size();
-//    initUndistortRectifyMap(cameraMatrix, distCoeffs, Mat(), getOptimalNewCameraMatrix(cameraMatrix, distCoeffs, imageSize, 1, imageSize, 0), imageSize, CV_32FC1, map1, map2);
-//    remap(image, out_calib, map1, map2, INTER_LINEAR);
-//    image = out_calib;
-//  }
-
+  Mat image = labyrinth_first.clone();
 
   int first_image_width = image.size().width;
   int first_image_height = image.size().height;
@@ -242,141 +200,17 @@ void RecognizeLabyrinth::onNewImage()
   Mat after_threshold;
   Mat src_lines;
 
+  out_img.write(src.clone());
 
-  // if the labyrinth was not found, rotate image and try to find walls, remember the rotation
-  if (!labyrinth_found)
-  {
-    out_img.write(src.clone());
+  int line_number_left = 0;
+  int line_number_right = 0;
+  int line_number_up = 0;
+  int line_number_down = 0;
+  int min_line_length = 150; // po co mi to, skoro w propsach mam min_length?
 
-    int line_number_left = 0;
-    int line_number_right = 0;
-    int line_number_up = 0;
-    int line_number_down = 0;
-    int min_line_length = 50;
-
-    for (rotation = 1.0; rotation < 180.0; rotation += 1) {
-      //LOG(LNOTICE) << " rotation " << rotation;
-
-      Mat image_bigger(image.rows + image.rows, image.cols + image.cols, image.depth());
-      copyMakeBorder(image, image_bigger, (image.cols)/2, (image.cols)/2, (image.rows)/2, (image.rows)/2, BORDER_REPLICATE);
-
-      Point2f src_center(image_bigger.cols/2.0F, image_bigger.rows/2.0F);
-      Mat rot_mat = getRotationMatrix2D(src_center, rotation, 1.0);
-
-      warpAffine(image_bigger, rotatedImg, rot_mat, image_bigger.size());
-
-      src = rotatedImg.clone();
-
-      CvSize src_image_size = src.size();
-
-      // Source bw image
-      cvtColor(src, src_bw, CV_BGR2GRAY);
-
-      // Threshold
-      after_threshold = cvCreateImage(src_image_size, IPL_DEPTH_8U, 1);
-      cv::threshold(src_bw, after_threshold, segmentation_threshold, 255, CV_THRESH_BINARY);
-      //src_bw = src_bw > segmentation_threshold;     // fajny efekt
-
-      vector<Vec4i> lines;
-      src_lines = src.clone();
-
-      HoughLinesP(after_threshold, lines, 1, CV_PI/2, threshold, min_length, max_gap);
-
-      if (lines.size() == 0)
-        continue;
-
-      // Draw lines
-//      for (size_t i = 0; i < lines.size(); i++) {
-//            line(src_lines, Point(lines[i][0], lines[i][1]),  Point(lines[i][2], lines[i][3]), Scalar(0,0,255), 3, 8 );
-//      }
-
-      min_x = 0;
-      max_x = 0;
-      min_y = 0;
-      max_y = 0;
-      line_number_left = 0;
-      line_number_right = 0;
-      line_number_up = 0;
-      line_number_down = 0;
-      for (size_t i = 0; i < lines.size(); i++) {
-
-        int x0 = lines[i][0];
-        int y0 = lines[i][1];
-        int x1 = lines[i][2];
-        int y1 = lines[i][3];
-
-        // vertical lines
-        // calculate the coordinates of the middle of the line
-        int middle = (x0 + x1) / 2;
-
-        // the first line on the left?
-        if ((middle < min_x || min_x == 0) && abs(y0 - y1) > min_line_length) {
-          min_x = middle;
-          line_number_left = i;
-        }
-
-        // the first line on the right?
-        if (middle > max_x && abs(y0 - y1) > min_line_length) {
-          max_x = middle;
-          line_number_right = i;
-        }
-
-        // horizontal lines
-        // calculate the coordinates of the middle of the line
-        middle = (y0 + y1) / 2;
-        // the first line up?
-        if ((middle < min_y || min_y == 0) && abs(x0 - x1) > min_line_length) {
-          min_y = middle;
-          line_number_up = i;
-        }
-
-        // the first line down?
-        if (middle > max_y && abs(x0 - x1) > min_line_length) {
-          max_y = middle;
-          line_number_down = i;
-        }
-
-      }
-
-
-      // if the walls were found and the labyrinth is right size
-      if (abs(max_x-min_x) > first_image_width / 3 && abs(max_y-min_y) > first_image_height / 3) {
-        //crop the image of labyrinth
-        Mat roi(src_lines, Rect(min_x,min_y,max_x-min_x,max_y-min_y));
-        labyrinth_first = roi.clone();
-        labyrinth_after_first = roi.clone();
-
-  //      CvPoint* line = (CvPoint*)cvGetSeqElem(lines,line_number_left);
-  //      cvLine(src_lines, cvPoint(line[0].x, line[0].y), cvPoint(line[1].x, line[1].y), cvScalar(0,255,0), 4);
-  //      line = (CvPoint*)cvGetSeqElem(lines,line_number_right);
-  //      cvLine(src_lines, cvPoint(line[0].x, line[0].y), cvPoint(line[1].x, line[1].y), cvScalar(0,255,0), 4);
-  //      line = (CvPoint*)cvGetSeqElem(lines,line_number_up);
-  //      cvLine(src_lines, cvPoint(line[0].x, line[0].y), cvPoint(line[1].x, line[1].y), cvScalar(0,255,0), 4);
-  //      line = (CvPoint*)cvGetSeqElem(lines,line_number_down);
-  //      cvLine(src_lines, cvPoint(line[0].x, line[0].y), cvPoint(line[1].x, line[1].y), cvScalar(0,255,0), 4);
-
-        LOG(LNOTICE) << "Labyrinth found.";
-        LOG(LNOTICE) << " min_x " << min_x << " min_y " << min_y << " max_x " << max_x << " max_y " << max_y << " rotation " << rotation;
-        labyrinth_found = true;
-        break;
-      }
-
-    }
-  }
-  // No labyrinth found in the picture
-  else if (min_x == 0 && min_y == 0 && max_x == 0 && max_y == 0)
-  {
-    LOG(LWARNING) << "Labyrinth couldn't be found.";
-    return;
-  }
-  // Labyrinth found before, rotate and crop the actual image regarding to the first image of labyrinth
-  else
-  {
-    //LOG(LNOTICE) << "Znalazlem już wcześniej labirynt i go pamiętam. Przycinam i obracam nowy obraz wg obliczeń z pierwszego.";
-
-    // TODO Optimize, remember the values in class params instead of calculate for every frame
+  // Obracaj zdjecie
+  for (rotation = -90.0; rotation <= 90.0; rotation += 1) {
     Mat image_bigger(image.rows + image.rows, image.cols + image.cols, image.depth());
-
     copyMakeBorder(image, image_bigger, (image.cols)/2, (image.cols)/2, (image.rows)/2, (image.rows)/2, BORDER_REPLICATE);
 
     Point2f src_center(image_bigger.cols/2.0F, image_bigger.rows/2.0F);
@@ -385,14 +219,112 @@ void RecognizeLabyrinth::onNewImage()
     warpAffine(image_bigger, rotatedImg, rot_mat, image_bigger.size());
 
     src = rotatedImg.clone();
-    Mat roi(src, Rect(min_x,min_y,max_x-min_x,max_y-min_y));
-    // switch between these two to solve labyrinth online or just once, at the beginning
-    //labyrinth_after_first = roi.clone();
-    labyrinth_after_first = labyrinth_first;
+
+    CvSize src_image_size = src.size();
+
+    // Source bw image
+    cvtColor(src, src_bw, CV_BGR2GRAY);
+
+    // Threshold
+    after_threshold = cvCreateImage(src_image_size, IPL_DEPTH_8U, 1);
+    cv::threshold(src_bw, after_threshold, segmentation_threshold, 255, CV_THRESH_BINARY);
+    //src_bw = src_bw > segmentation_threshold;     // fajny efekt
+
+    vector<Vec4i> lines;
+    src_lines = src.clone();
+
+    HoughLinesP(after_threshold, lines, 1, CV_PI/2, threshold, min_length, max_gap);
+
+    if (lines.size() == 0)
+      continue;
+
+    // Draw lines
+    for (size_t i = 0; i < lines.size(); i++) {
+          line(src_lines, Point(lines[i][0], lines[i][1]),  Point(lines[i][2], lines[i][3]), Scalar(0,0,255), 3, 8 );
+    }
+
+    min_x = 0;
+    max_x = 0;
+    min_y = 0;
+    max_y = 0;
+    line_number_left = 0;
+    line_number_right = 0;
+    line_number_up = 0;
+    line_number_down = 0;
+    for (size_t i = 0; i < lines.size(); i++) {
+
+      int x0 = lines[i][0];
+      int y0 = lines[i][1];
+      int x1 = lines[i][2];
+      int y1 = lines[i][3];
+
+      // vertical lines
+      // calculate the coordinates of the middle of the line
+      int middle = (x0 + x1) / 2;
+
+      // the first line on the left?
+      if ((middle < min_x || min_x == 0) && abs(y0 - y1) > min_line_length) {
+        min_x = middle;
+        line_number_left = i;
+      }
+
+      // the first line on the right?
+      if (middle > max_x && abs(y0 - y1) > min_line_length) {
+        max_x = middle;
+        line_number_right = i;
+      }
+
+      // horizontal lines
+      // calculate the coordinates of the middle of the line
+      middle = (y0 + y1) / 2;
+      // the first line up?
+      if ((middle < min_y || min_y == 0) && abs(x0 - x1) > min_line_length) {
+        min_y = middle;
+        line_number_up = i;
+      }
+
+      // the first line down?
+      if (middle > max_y && abs(x0 - x1) > min_line_length) {
+        max_y = middle;
+        line_number_down = i;
+      }
+
+    }
+
+
+    // Jesli przy tym obrocie znaleziono sciany i rozmiar labiryntu jest poprawny, wyjdz z petli
+    if (abs(max_x-min_x) > first_image_width / 3 && abs(max_y-min_y) > first_image_height / 3) {
+      //crop the image of labyrinth
+      Mat roi(src_lines, Rect(min_x,min_y,max_x-min_x,max_y-min_y));
+      labyrinth_first = roi.clone();
+      labyrinth_after_first = roi.clone();
+
+      cout << "\tLabyrinth found at";
+      cout << " min_x " << min_x << " min_y " << min_y << " max_x " << max_x << " max_y " << max_y << " rotation " << rotation << endl;
+      labyrinth_found = true;
+      break;
+    }
+
+  }
+
+  // Jesli wspolrzedne scian zerowe lub obracany i nic
+  if (rotation > 90 || (min_x == 0 && min_y == 0 && max_x == 0 && max_y == 0))
+  {
+    LOG(LWARNING) << "Labyrinth couldn't be found.";
+    ostringstream ss;
+    ss << " 0";
+    ss << " " << calibrate_labyrinth;
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    out_reading.write(ss.str());
+    return;
   }
 
   Mat labyrinth_cropped = labyrinth_after_first.clone();
-
 
   Labyrinth labyrinth;
 
@@ -474,55 +406,60 @@ void RecognizeLabyrinth::onNewImage()
     x2 = (v.back()).first;
     y2 = (v.back()).second;
 
-
     // Data to be sent to communication component
-    string stringData = "";
-
-
     ostringstream ss;
+    ss << " 1";
+    ss << " " << calibrate_labyrinth; // calibrate_labyrinth - na stale false
     ss << " " << path_size;
     ss << " " << x1;
     ss << " " << y1;
     ss << " " << x2;
     ss << " " << y2;
-
-    //printf("Solved: %d ", labyrinth_solved);
-    //printf("Path Size: %i ", path_size);
-    //printf("Start_pt: (%i, %i) ", x1, y1);
-    //printf("End_pt: (%i, %i) ", x2, y2);
-    //printf("Path: ");
     for(int i=0; i<path_size; ++i) {
-      //printf("%i ", path[i]);
       ss << " " << path[i];
     }
-    //printf("\n");
-
-    stringData = ss.str();
-
-    out_reading.write(stringData);
+    out_reading.write(ss.str());
+    out_done_processing.write(false);
   }
   else
   {
     x1 = x2 = y1 = y2 = 0;
-    LOG(LNOTICE) << "Couldn't find the correct solution for given labyrinth!";
+    ostringstream ss;
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    ss << " 0";
+    out_reading.write(ss.str());
+    labyrinth_found = false;
+    cout << "Couldn't find the correct solution for given labyrinth!" << endl;
+    out_done_processing.write(false);
   }
-//  printf("\n\nRecognizeLabyrinth onRpcCall():\n");
-//  printf("Solved: %d\n", labyrinth_solved);
-//  printf("Path Size: %i\n", path_size);
-//  printf("Start_pt: (%i, %i)\n", x1, y1);
-//  printf("End_pt: (%i, %i)\n", x2, y2);
-//  printf("Path: ");
-//  for(int i=0; i<path_size; ++i)
-//    printf("%i ", path[i]);
 
   out_img.write(labyrinth_cropped.clone());
+  labyrinth_last = labyrinth_cropped.clone();
+  out_done_processing.write(true);
+}
 
-  //labyrinth_found = false;
+void RecognizeLabyrinth::onProcess()
+{
+  if(in_start_processing.read())
+    processLabyrinth();
+  else
+    out_done_processing.write(false);
+}
+
+void RecognizeLabyrinth::onNewImage()
+{
+  labyrinth_first = in_img.read();
 }
 
 bool RecognizeLabyrinth::loadParameters()
 {
-  LOG(LNOTICE) << "RecognizeLabyrinth::loadParameters()";
+  cout << "RecognizeLabyrinth::loadParameters()" << endl;
 
   return false;
   // TODO odczytac z properties stringa z nazw pliku, a stamtad calibrationResults
@@ -556,13 +493,19 @@ void RecognizeLabyrinth::prepareInterface() {
 
 
   h_onNewImage.setup(this, &RecognizeLabyrinth::onNewImage);
+  h_onProcess.setup(this, &RecognizeLabyrinth::onProcess);
 
   registerHandler("onNewImage", &h_onNewImage);
   addDependency("onNewImage", &in_img);
 
+  registerHandler("onProcess", &h_onProcess);
+  addDependency("onProcess", &in_start_processing);
+
   registerStream("in_img", &in_img);
+  registerStream("in_start_processing", &in_start_processing);
   registerStream("out_img", &out_img);
   registerStream("out_reading", &out_reading);
+  registerStream("out_done_processing", &out_done_processing);
 }
 
 

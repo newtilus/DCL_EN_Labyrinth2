@@ -7,9 +7,9 @@
 #ifndef RECOGNIZE_LABYRINTH_HPP_
 #define RECOGNIZE_LABYRINTH_HPP_
 
-#define DIMENSION_X 7
-#define DIMENSION_Y 7
-#define MAX_PATH 49
+#define DIMENSION_X 8
+#define DIMENSION_Y 9
+#define MAX_PATH 48
 #define DOWN 0
 #define RIGHT 1
 #define UP 2
@@ -17,9 +17,9 @@
 #define HORIZONTAL 0
 #define VERTICAL 1
 #define START_X 0
-#define START_Y 6
-#define END_X 6
-#define END_Y 0
+#define START_Y 0
+#define END_X 7
+#define END_Y 8
 
 
 #include "EventHandler2.hpp"
@@ -79,6 +79,12 @@ protected:
   /*!
    * Event handler function.
    */
+  void onProcess();
+  void processLabyrinth();
+
+  /*!
+   * Event handler function.
+   */
   void onNewImage();
 
   /*!
@@ -90,14 +96,17 @@ protected:
 
   /// handlers
   Base::EventHandler <RecognizeLabyrinth> h_onNewImage; // new image of labyrinth arrived
+  Base::EventHandler <RecognizeLabyrinth> h_onProcess; // process signal from initiation component
 
   /// inputs
   //Base::DataStreamIn <Mat, Base::DataStreamBuffer::Newest> in_img; // new image of labyrinth
-  Base::DataStreamIn <Mat> in_img;
+  Base::DataStreamIn <Mat, Base::DataStreamBuffer::Newest> in_img;
+  Base::DataStreamIn <bool, Base::DataStreamBuffer::Newest> in_start_processing;
 
   /// outputs
   Base::DataStreamOut <Mat> out_img;  //new image of solved labyrinth
   Base::DataStreamOut <string> out_reading;  //data
+  Base::DataStreamOut <bool> out_done_processing;
 
   // Load calibration parameters from file.
   bool loadParameters();
@@ -115,6 +124,7 @@ private:
   Base::Property<int> prop_segmentation_threshold;
   Base::Property<int> prop_min_length;
   Base::Property<int> prop_max_gap;
+  Base::Property<int> prop_calibrate_labyrinth;
 
   cv::Mat hue_img;
   cv::Mat saturation_img;
@@ -127,6 +137,7 @@ private:
   // Matrices storing partial undistortion results.
   //Mat map1, map2;
   Mat labyrinth_first;
+  Mat labyrinth_last;
   Mat first_image;
   int k;
   bool showImage;
@@ -145,6 +156,7 @@ private:
   int segmentation_threshold;
   int threshold;
   int min_length;
+  int calibrate_labyrinth;
   int max_gap;
   // Indicates if the file with calibration parameters was found
   bool file_found;

@@ -1,0 +1,105 @@
+<Task>
+	<!-- reference task information -->
+	<Reference>
+		<Author>
+			<name>Emil Natil</name>
+			<link></link>
+		</Author>
+		
+		<Description>
+			<brief>Labyrinth Solver - Photo</brief>
+			<full>Labyrinth Solver - Photo</full>	
+		</Description>
+	</Reference>
+	
+	<!-- task definition -->
+	<Subtasks>
+		
+		<Subtask name="Reading">
+			<Executor name="Source Images"  period="1">
+				<Component name="Source" type="CvBasic:CameraOpenCV" priority="1" bump="0">
+					<param name="devide">0</param>
+				</Component>
+			</Executor>
+		</Subtask>
+		
+		<Subtask name="Control">
+			<Executor name="Control"  period="0">
+				<Component name="Init" type="DCL_EN_Labyrinth2:Init" priority="2" bump="0">
+				</Component>
+			</Executor>
+		</Subtask>
+		
+		<Subtask name="Processing">
+			<Executor name="Processing"  period="0">
+				<Component name="Recognize" type="DCL_EN_Labyrinth2:RecognizeLabyrinth" priority="1" bump="0">
+    			<param name="x1">1</param>
+					<param name="x2">1</param>
+					<param name="y1">1</param>
+					<param name="y2">7</param>
+					<param name="threshold">100</param>
+					<param name="segmentation_threshold">250</param>
+					<param name="min_length">150</param>
+					<param name="max_gap">5</param> 
+					<param name="calibrate_labyrinth">0</param>
+				</Component>
+			</Executor>
+		</Subtask>
+		
+		<Subtask name="Communicating">
+		  <Executor name="LabyrinthReading"  period="0">
+			  <Component name="LabyrinthReading" type="DCL_EN_Labyrinth2:LabyrinthReading" priority="2" bump="0">
+			  </Component>
+		  </Executor>
+		</Subtask>
+
+		<Subtask name="Mrrocpp">
+		  <Executor name="Mrrocpp"  period="0">
+			  <Component name="Mrrocpp" type="DCL_EN_Labyrinth2:Mrrocpp" priority="2" bump="-5">
+     			<param name="port">8888</param>
+			  </Component>
+		  </Executor>
+		</Subtask>
+		
+		<Subtask name="Visualization">
+			<Executor name="VisualizationThread" period="0">
+				<Component name="Window" type="CvBasic:CvWindow" priority="3" bump="-5">
+					<param name="count">1</param>
+					<param name="title">Original</param>
+				</Component>
+			</Executor>
+		</Subtask>	
+		
+	</Subtasks>
+	
+	<!-- pipes connecting datastreams -->
+	<DataStreams>
+		
+		<Source name="Source.out_img">
+			<sink>Recognize.in_img</sink>			
+		</Source>
+		<Source name="Recognize.out_img">
+			<sink>Window.in_img</sink>			
+		</Source>
+		
+		<Source name="Init.out_start_processing">
+			<sink>Recognize.in_start_processing</sink>			
+		</Source>
+		<Source name="Recognize.out_done_processing">
+			<sink>Init.in_done_processing</sink>			
+		</Source>
+		
+		<Source name="Recognize.out_reading">
+			<sink>LabyrinthReading.stringReading</sink>			
+		</Source>
+		<Source name="LabyrinthReading.out_reading">
+			<sink>Mrrocpp.rpcResult</sink>			
+		</Source>
+	</DataStreams>
+	
+</Task>
+
+
+
+
+
